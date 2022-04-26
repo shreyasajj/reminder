@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import Type, Tuple, List
+from typing import Type, Tuple, List, Dict
 from datetime import datetime, timedelta
 from html import escape
 import asyncio
@@ -21,7 +21,7 @@ import asyncio
 import pytz
 
 from mautrix.types import (EventType, RedactionEvent, StateEvent, Format, MessageType,
-                           TextMessageEventContent, ReactionEvent, UserID)
+                           TextMessageEventContent, ReactionEvent, UserID, RoomID, Member)
 from mautrix.util.config import BaseProxyConfig
 from maubot import Plugin, MessageEvent
 from maubot.handlers import command, event
@@ -37,6 +37,7 @@ class ReminderBot(Plugin):
     base_command: str
     base_aliases: Tuple[str, ...]
     default_timezone: pytz.timezone
+    room_members: Dict[RoomID, Dict[UserID, Member]]
 
     @classmethod
     def get_config_class(cls) -> Type[BaseProxyConfig]:
@@ -46,6 +47,7 @@ class ReminderBot(Plugin):
         self.on_external_config_update()
         self.db = ReminderDatabase(self.database)
         self.reminder_loop_task = asyncio.ensure_future(self.reminder_loop(), loop=self.loop)
+        self.room_members = {}
 
     def on_external_config_update(self) -> None:
         self.config.load_and_update()
@@ -97,8 +99,12 @@ class ReminderBot(Plugin):
         else:
             self.log.debug(f"Sending {reminder} immediately")
         users = " ".join(reminder.users)
-        users_html = " ".join(f"<a href='https://matrix.to/#/{user_id}'>{user_id}</a>"
+        members = await self.get_room_members(reminder.room_id)
+        for user_id in reminder.users:
+            self.log.debug(members[user_id])
+        users_html = " ".join(f"<a href='https://matrix.to/#/{user_id}'>{members[user_id].displayname}</a>"
                               for user_id in reminder.users)
+        self.log.debug(users_html)
         content = TextMessageEventContent(
             msgtype=MessageType.TEXT, body=f"{users}: {reminder.message}", format=Format.HTML,
             formatted_body=f"{users_html}: {escape(reminder.message)}")
@@ -282,3 +288,10 @@ class ReminderBot(Plugin):
         if not evt.content.replacement_room:
             return
         self.db.update_room_id(evt.room_id, evt.content.replacement_room)
+
+    async def get_room_members(self, room_id: RoomID) -> Dict[UserID, Member]:
+        try:
+            return self.room_members[room_id]
+        except KeyError:
+            self.room_members[room_id] = await self.client.get_joined_members(room_id)
+            return self.room_members[room_id]
