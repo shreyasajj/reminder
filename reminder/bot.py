@@ -100,11 +100,8 @@ class ReminderBot(Plugin):
             self.log.debug(f"Sending {reminder} immediately")
         users = " ".join(reminder.users)
         members = await self.get_room_members(reminder.room_id)
-        for user_id in reminder.users:
-            self.log.debug(members[user_id])
         users_html = " ".join(f"<a href='https://matrix.to/#/{user_id}'>{members[user_id].displayname}</a>"
                               for user_id in reminder.users)
-        self.log.debug(users_html)
         content = TextMessageEventContent(
             msgtype=MessageType.TEXT, body=f"{users}: {reminder.message}", format=Format.HTML,
             formatted_body=f"{users_html}: {escape(reminder.message)}")
